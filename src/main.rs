@@ -1,4 +1,5 @@
 use std::{fs, path::Path};
+use regex::Regex;
 
 use crate::helper::Helper::non_pub_decl;
 
@@ -101,7 +102,7 @@ fn main() {
     }, 
     "add_doc_str" | "doc_str" | "add_doc" | "add_docs" => {
         let fpath = cwd.join(Path::new(&args[1]));
-        let contents = fs::read_to_string(&fpath).unwrap();
+        let mut contents = fs::read_to_string(&fpath).unwrap();
         let (fxn_doc,struct_doc) = (
             "
 /// {FXN_NAME}
@@ -134,12 +135,16 @@ fn main() {
 /// 
 /// ```",
 "
-/// {STRUCT_NAME]
+/// {STRUCT_NAME}
 /// 
 /// Summary
 ///
 /// Description
 ///
+/// Fields 
+/// 
+/// {FIELDS}
+/// 
 /// # Examples
 ///
 /// ```rust
@@ -148,9 +153,65 @@ fn main() {
 "
 );
 
+        let fxn_regex = Regex::new(r"(pub\s+)?fn\s+(\w+)\s*\(([^)]*)\)\s*(->\s*[^{;]+)?").unwrap();
+        let strct_regex = Regex::new(r"(pub\s+)?struct\s+(\w+)\s*\{([^}]*)\}").unwrap();
+        let fields_regex = Regex::new(r"pub\s+(\w+)\s*:\s*([^,]+)").unwrap();
+        let args_regex = Regex::new(r"(\w+)\s*:\s*([^,]+)").unwrap();
+        
+        let lines: Vec<String> = contents.lines().map(|l| l.to_string()).collect();
+        let mut insertions = vec![];
 
+        for (idx, line) in lines.iter().enumerate() {
+            if let Some(caps) = fxn_regex.captures(line) {
+                let fn_name = caps.get(2).map(|m| m.as_str()).unwrap_or("");
+                let args_str = caps.get(3).map(|m| m.as_str()).unwrap_or("");
+                let ret_str = caps.get(4).map(|m| m.as_str().trim_start_matches("->").trim()).unwrap_or("()");
 
+                let args: Vec<String> = args_regex.captures_iter(args_str)
+                    .map(|c| {
+                        let name = c.get(1).map(|m| m.as_str()).unwrap_or("");
+                        let typ = c.get(2).map(|m| m.as_str().trim()).unwrap_or("");
+                        format!("* `{}` - `{}` -> Description", name, typ)
+                    })
+                    .collect();
+                let args_formatted = if args.is_empty() { "None".to_string() } else { args.join("\n/// ") };
 
+                let doc = fxn_doc
+                    .replace("{FXN_NAME}", fn_name)
+                    .replace("{ARGS}", &args_formatted)
+                    .replace("{RETURNS}", ret_str);
+
+                insertions.push((idx, doc));
+            }
+        }
+
+        for (idx, line) in lines.iter().enumerate() {
+            if let Some(caps) = strct_regex.captures(line) {
+                let struct_name = caps.get(2).map(|m| m.as_str()).unwrap_or("");
+                let fields_str = caps.get(3).map(|m| m.as_str()).unwrap_or("");
+                let fields: Vec<String> = fields_regex.captures_iter(fields_str)
+                    .map(|c| {
+                        let name = c.get(1).map(|m| m.as_str()).unwrap_or("");
+                        let typ = c.get(2).map(|m| m.as_str().trim()).unwrap_or("");
+                        format!("* `{}` - `{}` -> Description", name, typ)
+                    })
+                    .collect();
+                let fields_formatted = if fields.is_empty() { "None".to_string() } else { fields.join("\n/// ") };
+                let doc = struct_doc
+                    .replace("{STRUCT_NAME}", struct_name)
+                    .replace("{FIELDS}", &fields_formatted);
+
+                insertions.push((idx, doc));
+            }
+        }
+
+        insertions.sort_by(|a, b| b.0.cmp(&a.0));
+        for (idx, doc) in insertions {
+            let byte_offset = lines[..idx].iter().map(|l| l.len() + 1).sum::<usize>();
+            contents.insert_str(byte_offset, &doc);
+        }
+
+        std::fs::write(fpath, contents).unwrap();
     }
 
 _ => {}
