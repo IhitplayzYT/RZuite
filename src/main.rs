@@ -36,38 +36,68 @@ fn main() {
     },
     "rm_unused_import" | "rm_import" => {
          let fpath = cwd.join(Path::new(&args[1]));
-         let mut contents = fs::read_to_string(&fpath).unwrap();
+         let contents = fs::read_to_string(&fpath).unwrap();
          let mut imports = vec![];
          contents.split("\n").enumerate().for_each(|x| if x.1.starts_with("use ") {imports.push(x);});
          
-         for (idx,v) in imports{
+         let mut unused_imports = vec![];
+
+         for (idx, v) in imports {
             let l = v.len();
             let mut i = 0;
             let v: Vec<char> = v.chars().collect();
-            let mut stack = vec![];
+            let mut stack = vec![vec![]];
 
-            while i < l{
-                match v[i]{
-                    ':' => {i+=1;stack.push(vec![]);},
+            while i < l {
+                match v[i] {
+                    ':' => {
+                        i += 1;
+                        if i < l && v[i] == ':' {
+                            i += 1;
+                            stack.push(vec![]);
+                        }
+                    },
                     '{' => {stack.push(vec![]);},
                     '}' => {stack.pop().unwrap();},
                     ',' => {
                         let k = stack.last_mut().unwrap();
                         k.push(String::new());
                     },
+                    ';' => break,
                     _ => {
-                        let k = stack.last_mut().unwrap();
-                        let last_str_in_scope = k.last_mut().unwrap();
-                        last_str_in_scope.push(v[i]);
+                        if let Some(k) = stack.last_mut() {
+                            if let Some(last_str_in_scope) = k.last_mut() {
+                                last_str_in_scope.push(v[i]);
+                            }
+                        }
                     }
                 }
-                i+=1;
+                i += 1;
             }
 
+            let imported: Vec<String> = stack.iter()
+                .flat_map(|level| level.iter())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
 
+            let is_used = imported.iter().any(|symbol| {
+                contents.lines().enumerate().any(|(line_idx, line)| {
+                    line_idx != idx && line.contains(symbol)
+                })
+            });
 
+            if !is_used {
+                unused_imports.push(idx);
+            }
          }
+         unused_imports.reverse();
 
+         let lines: Vec<&str> = contents.lines().collect();
+         let filtered_lines: Vec<&str> = lines.iter().enumerate().filter(|(i, _)| !unused_imports.contains(i)).map(|(_, &line)| line).collect();
+         
+         let res = filtered_lines.join("\n");
+         std::fs::write(fpath, res).unwrap();
     }
 
 _ => {}
