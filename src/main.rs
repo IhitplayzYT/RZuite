@@ -5,6 +5,25 @@ use crate::helper::Helper::non_pub_decl;
 
 mod helper;
 
+fn find_src_dir() -> std::path::PathBuf {
+    let mut current = std::env::current_dir().unwrap();
+    
+    loop {
+        let cargo_toml = current.join("Cargo.toml");
+        if cargo_toml.exists() {
+            let src_dir = current.join("src");
+            if src_dir.exists() {
+                return src_dir;
+            }
+        }
+        
+        match current.parent() {
+            Some(parent) => current = parent.to_path_buf(),
+            None => panic!("Could not find Rust project src directory"),
+        }
+    }
+}
+
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<String>>();
     let cwd = std::env::current_dir().unwrap();    
@@ -157,7 +176,7 @@ fn main() {
         let strct_regex = Regex::new(r"(pub\s+)?struct\s+(\w+)\s*\{([^}]*)\}").unwrap();
         let fields_regex = Regex::new(r"pub\s+(\w+)\s*:\s*([^,]+)").unwrap();
         let args_regex = Regex::new(r"(\w+)\s*:\s*([^,]+)").unwrap();
-        
+
         let lines: Vec<String> = contents.lines().map(|l| l.to_string()).collect();
         let mut insertions = vec![];
 
@@ -212,8 +231,36 @@ fn main() {
         }
 
         std::fs::write(fpath, contents).unwrap();
+    },
+    "add_allows" | "allows" => {
+        let src_dir = find_src_dir();
+        let allow_macro = "#![allow(non_snake_case, non_camel_case_types, unused_imports, dead_code)]\n";
+        
+        // Find all .rs files in src directory (excluding mod.rs)
+        let entries = fs::read_dir(&src_dir).unwrap();
+        for entry in entries {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            
+            if path.extension().and_then(|s| s.to_str()) == Some("rs") {
+                let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                
+                // Skip mod.rs files
+                if file_name == "mod.rs" {
+                    continue;
+                }
+                
+                let mut contents = fs::read_to_string(&path).unwrap();
+                
+                // Check if allow macro already exists
+                if !contents.contains("#![allow(") {
+                    contents.insert_str(0, allow_macro);
+                    fs::write(&path, contents).unwrap();
+                }
+            }
+        }
     }
-
+ 
 _ => {}
 };
 
