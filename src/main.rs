@@ -98,6 +98,59 @@ fn main() {
          
          let res = filtered_lines.join("\n");
          std::fs::write(fpath, res).unwrap();
+    }, 
+    "add_doc_str" | "doc_str" | "add_doc" | "add_docs" => {
+        let fpath = cwd.join(Path::new(&args[1]));
+        let contents = fs::read_to_string(&fpath).unwrap();
+        let (fxn_doc,struct_doc) = (
+            "
+/// {FXN_NAME}
+/// 
+/// Summary
+///
+/// Description.
+///
+/// # Arguments
+///
+/// {ARGS}
+///
+/// # Returns
+/// 
+/// {RETURNS}
+///
+/// Description of the return value.
+///
+/// # Errors
+///
+/// Description of possible errors function can throw
+///
+/// # Panics
+///
+/// Description of possible conditions for panics
+///
+/// # Examples
+///
+/// ```rust
+/// 
+/// ```",
+"
+/// {STRUCT_NAME]
+/// 
+/// Summary
+///
+/// Description
+///
+/// # Examples
+///
+/// ```rust
+/// 
+/// ```
+"
+);
+
+
+
+
     }
 
 _ => {}
