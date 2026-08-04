@@ -1,28 +1,12 @@
 use std::{fs, path::Path};
 use regex::Regex;
 
-use crate::helper::Helper::non_pub_decl;
-
 mod helper;
+use crate::helper::Helper::*;
 
-fn find_src_dir() -> std::path::PathBuf {
-    let mut current = std::env::current_dir().unwrap();
-    
-    loop {
-        let cargo_toml = current.join("Cargo.toml");
-        if cargo_toml.exists() {
-            let src_dir = current.join("src");
-            if src_dir.exists() {
-                return src_dir;
-            }
-        }
-        
-        match current.parent() {
-            Some(parent) => current = parent.to_path_buf(),
-            None => panic!("Could not find Rust project src directory"),
-        }
-    }
-}
+
+
+
 
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<String>>();
@@ -31,14 +15,16 @@ fn main() {
 
     match &args[0].to_lowercase()[..]{
         "gen_modules" | "gen_mods" | "module_init" | "mod_init" => {
-    let fpath = cwd.join(Path::new(&args[1]));
+    let fpath = Path::new(&args[1]);
+    let dpath = fpath.parent().unwrap();
+    
     let mods = std::fs::read_to_string(fpath).unwrap();
     mods.lines().for_each(|x| {
         let fname = x.split_whitespace().last().unwrap().to_string();
         let mod_name= &fname[..fname.len() - 1];
         let fname= mod_name.to_string() + ".rs";
         std::fs::write(
-            cwd.join(Path::new(&fname)),
+            dpath.join(Path::new(&fname)),
             format!("pub mod {}{{\n}}", mod_name.to_ascii_lowercase()),
         )
         .unwrap();
@@ -235,8 +221,6 @@ fn main() {
     "add_allows" | "allows" => {
         let src_dir = find_src_dir();
         let allow_macro = "#![allow(non_snake_case, non_camel_case_types, unused_imports, dead_code)]\n";
-        
-        // Find all .rs files in src directory (excluding mod.rs)
         let entries = fs::read_dir(&src_dir).unwrap();
         for entry in entries {
             let entry = entry.unwrap();
@@ -244,23 +228,30 @@ fn main() {
             
             if path.extension().and_then(|s| s.to_str()) == Some("rs") {
                 let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-                
-                // Skip mod.rs files
-                if file_name == "mod.rs" {
+                if file_name == "mod.rs" || !file_name.ends_with(".rs") {
                     continue;
                 }
                 
                 let mut contents = fs::read_to_string(&path).unwrap();
                 
-                // Check if allow macro already exists
                 if !contents.contains("#![allow(") {
                     contents.insert_str(0, allow_macro);
                     fs::write(&path, contents).unwrap();
                 }
             }
         }
+    },
+    "gen_helper" | "gen_args" => {
+        let src = find_src_dir();
+        let helper = fs::read_to_string(std::env::home_dir().unwrap_or_default().join("ArgParse/src/lib.rs")).unwrap();
+        fs::write(src.join("helper.rs"), helper).unwrap();
+    },
+    "dep_graphs" | "dep" => {
+        let src = find_src_dir();
+        let deps = traverse(src);
+        let tree = build_dep_tree(deps);
+        println!("{}", tree);
     }
- 
 _ => {}
 };
 
